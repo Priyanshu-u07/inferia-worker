@@ -2,6 +2,7 @@ package recipes
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/inferia/inferia-worker/internal/config/vllm"
 )
@@ -38,6 +39,7 @@ func (r vllmRecipe) BuildPlan(in BuildInput) (Plan, error) {
 	for k, v := range gpuEnv {
 		envDefaults[k] = v
 	}
+	capMaxModelLen(cfg)
 	// LD_LIBRARY_PATH is set after gpuEnv so GPU profiles cannot accidentally
 	// override it. This path fixes an AWS DLAMI driver mismatch (see below)
 	// that would otherwise leave deploys stuck in DEPLOYING.
@@ -69,7 +71,6 @@ func (r vllmRecipe) BuildPlan(in BuildInput) (Plan, error) {
 		"tensor_parallel_size", "pipeline_parallel_size",
 		"dtype", "max_model_len", "max_num_seqs",
 		"gpu_memory_utilization", "quantization",
-		"max_batch_size", "max_input_length", "max_total_tokens",
 		"kv_cache_dtype", "max_num_batched_tokens",
 	} {
 		if v, ok := cfg[k]; ok {
@@ -98,6 +99,38 @@ func (r vllmRecipe) BuildPlan(in BuildInput) (Plan, error) {
 		GPUIndices:    in.GPUIndices,
 		ReadyPath:     r.readyPath,
 	}, nil
+}
+
+// capMaxModelLen holds max_model_len, however it was set, to the model's own
+// context: vLLM refuses to start above it. Only the control plane can look that
+// up, so it arrives in config; unset means unknown.
+func capMaxModelLen(cfg map[string]any) {
+	native, ok := wholeNumber(cfg["native_max_model_len"])
+	if !ok || native <= 0 {
+		return
+	}
+	if current, ok := wholeNumber(cfg["max_model_len"]); ok && current > native {
+		cfg["max_model_len"] = native
+	}
+}
+
+func wholeNumber(v any) (int, bool) {
+	switch x := v.(type) {
+	case int:
+		return x, true
+	case int32:
+		return int(x), true
+	case int64:
+		return int(x), true
+	case float32:
+		return int(x), true
+	case float64:
+		return int(x), true
+	case string:
+		n, err := strconv.Atoi(x)
+		return n, err == nil
+	}
+	return 0, false
 }
 
 func mergeEnv(user, defaults map[string]string) map[string]string {

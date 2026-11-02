@@ -84,7 +84,7 @@ func TestGPUOptimalConfig_T4(t *testing.T) {
 
 	checkConfig(t, cfg, []configCheck{
 		{"dtype", "float16"},
-		{"kv_cache_dtype", "int8"},
+		{"kv_cache_dtype", "auto"},
 		{"enforce_eager", true},
 		{"gpu_memory_utilization", 0.92},
 		{"max_model_len", 4096},
@@ -108,7 +108,7 @@ func TestGPUOptimalConfig_V100(t *testing.T) {
 
 	checkConfig(t, cfg, []configCheck{
 		{"dtype", "float16"},
-		{"kv_cache_dtype", "int8"},
+		{"kv_cache_dtype", "auto"},
 		{"enforce_eager", true},
 		{"gpu_memory_utilization", 0.90},
 		{"max_model_len", 3072},
@@ -141,7 +141,6 @@ func TestGPUOptimalConfig_L4(t *testing.T) {
 	checkConfig(t, cfg, []configCheck{
 		{"dtype", "bfloat16"},
 		{"kv_cache_dtype", "auto"},
-		{"quantization", "fp8"},
 		{"gpu_memory_utilization", 0.92},
 		{"max_model_len", 12288},
 		{"max_num_seqs", 48},
@@ -155,7 +154,6 @@ func TestGPUOptimalConfig_L40S(t *testing.T) {
 	checkConfig(t, cfg, []configCheck{
 		{"dtype", "bfloat16"},
 		{"kv_cache_dtype", "auto"},
-		{"quantization", "fp8"},
 		{"gpu_memory_utilization", 0.90},
 		{"max_model_len", 16384},
 		{"max_num_seqs", 64},
@@ -195,7 +193,6 @@ func TestGPUOptimalConfig_H100(t *testing.T) {
 	checkConfig(t, cfg, []configCheck{
 		{"dtype", "bfloat16"},
 		{"kv_cache_dtype", "fp8"},
-		{"quantization", "fp8"},
 		{"gpu_memory_utilization", 0.95},
 		{"max_model_len", 65536},
 		{"max_num_seqs", 512},
@@ -209,7 +206,6 @@ func TestGPUOptimalConfig_H200(t *testing.T) {
 	checkConfig(t, cfg, []configCheck{
 		{"dtype", "bfloat16"},
 		{"kv_cache_dtype", "fp8"},
-		{"quantization", "fp8"},
 		{"gpu_memory_utilization", 0.93},
 		{"max_model_len", 65536},
 		{"max_num_seqs", 512},
@@ -316,7 +312,6 @@ func TestGPUOptimalConfig_H100_Multi(t *testing.T) {
 		{"tensor_parallel_size", 8},
 		{"dtype", "bfloat16"},
 		{"kv_cache_dtype", "fp8"},
-		{"quantization", "fp8"},
 		{"gpu_memory_utilization", 0.95},
 		{"max_model_len", 65536},
 		{"max_num_seqs", 512},
@@ -330,10 +325,23 @@ func TestGPUOptimalConfig_H200_Multi(t *testing.T) {
 		{"tensor_parallel_size", 8},
 		{"dtype", "bfloat16"},
 		{"kv_cache_dtype", "fp8"},
-		{"quantization", "fp8"},
 		{"gpu_memory_utilization", 0.93},
 		{"max_model_len", 65536},
 		{"max_num_seqs", 512},
 		{"max_num_batched_tokens", 16384},
 	})
+}
+
+// Every GPU, so a new profile can't reintroduce either mistake.
+func TestGPUOptimalConfig_NoProfileSetsQuantizationOrAnInvalidCacheType(t *testing.T) {
+	// CacheDType in vLLM v0.22.1, which refuses anything else at startup.
+	valid := map[string]bool{"auto": true, "fp8": true}
+	for _, name := range []string{"Tesla T4", "Tesla V100", "NVIDIA A10G", "NVIDIA L4",
+		"NVIDIA L40S", "NVIDIA A100", "NVIDIA H100", "NVIDIA H200", "NVIDIA GH200"} {
+		cfg, _ := vllm.GPUOptimalConfig(name, 81920, 1)
+		checkNotSet(t, cfg, "quantization")
+		if v, ok := cfg["kv_cache_dtype"].(string); ok && !valid[v] {
+			t.Errorf("%s: kv_cache_dtype %q is not a vLLM value", name, v)
+		}
+	}
 }

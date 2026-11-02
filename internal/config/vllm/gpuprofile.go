@@ -1,6 +1,6 @@
 // Package vllm provides GPU-aware default configuration for vLLM inference
 // engine. It maps GPU model names to optimal vLLM parameters (dtype,
-// kv_cache_dtype, quantization, memory utilization, context length, batch
+// kv_cache_dtype, memory utilization, context length, batch
 // sizing).
 //
 // GPU identification data (name, VRAM) is expected from the caller — typically
@@ -65,26 +65,26 @@ func SMForGPU(name string) int {
 // GPU profile table — per-GPU family default config + sizing
 // ---------------------------------------------------------------------------
 
-// profile holds the SM-dependent config defaults.
+// profile holds the SM-dependent config defaults. Quantization is not one: it
+// depends on the model, and vLLM refuses a value its checkpoint doesn't match.
 type profile struct {
 	dtype   string
 	kvDtype string
-	quant   string // "" means no default
 	eager   bool
 	env     map[string]string
 }
 
 // gpuProfiles maps GPU name prefix → SM-dependent config.
 var gpuProfiles = map[string]profile{
-	"Tesla T4":   {dtype: "float16", kvDtype: "int8", eager: true, env: map[string]string{"VLLM_ATTENTION_BACKEND": "XFORMERS"}},
-	"Tesla V100": {dtype: "float16", kvDtype: "int8", eager: true, env: map[string]string{"VLLM_ATTENTION_BACKEND": "XFORMERS"}},
+	"Tesla T4":   {dtype: "float16", kvDtype: "auto", eager: true, env: map[string]string{"VLLM_ATTENTION_BACKEND": "XFORMERS"}},
+	"Tesla V100": {dtype: "float16", kvDtype: "auto", eager: true, env: map[string]string{"VLLM_ATTENTION_BACKEND": "XFORMERS"}},
 	"NVIDIA A10G": {dtype: "bfloat16", kvDtype: "auto"},
-	"NVIDIA L4":   {dtype: "bfloat16", kvDtype: "auto", quant: "fp8"},
-	"NVIDIA L40S": {dtype: "bfloat16", kvDtype: "auto", quant: "fp8"},
+	"NVIDIA L4":   {dtype: "bfloat16", kvDtype: "auto"},
+	"NVIDIA L40S": {dtype: "bfloat16", kvDtype: "auto"},
 	"NVIDIA A100": {dtype: "bfloat16", kvDtype: "auto"},
-	"NVIDIA H100": {dtype: "bfloat16", kvDtype: "fp8", quant: "fp8"},
-	"NVIDIA H200": {dtype: "bfloat16", kvDtype: "fp8", quant: "fp8"},
-	"NVIDIA GH200": {dtype: "bfloat16", kvDtype: "fp8", quant: "fp8"},
+	"NVIDIA H100": {dtype: "bfloat16", kvDtype: "fp8"},
+	"NVIDIA H200": {dtype: "bfloat16", kvDtype: "fp8"},
+	"NVIDIA GH200": {dtype: "bfloat16", kvDtype: "fp8"},
 }
 
 // sizingTable maps (GPU prefix, numGPUs) → sizing. Key "prefix" alone is the
@@ -163,9 +163,6 @@ func GPUOptimalConfig(name string, memoryMiB uint64, numGPUs int) (cfg map[strin
 		}
 		if p.kvDtype != "" {
 			cfg["kv_cache_dtype"] = p.kvDtype
-		}
-		if p.quant != "" {
-			cfg["quantization"] = p.quant
 		}
 		if p.eager {
 			cfg["enforce_eager"] = true
